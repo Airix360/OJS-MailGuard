@@ -12,11 +12,11 @@ $ojsRoot = dirname(__DIR__, 5);
 require $ojsRoot . '/tools/bootstrap.php';
 
 use APP\core\Application;
+use APP\facades\Repo;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use PKP\context\Context;
-use PKP\facades\Repo;
 use PKP\mail\Mailable;
 use APP\plugins\generic\mailGuard\MailGuardPlugin;
 use Throwable;
