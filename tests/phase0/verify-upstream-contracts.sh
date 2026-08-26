@@ -21,22 +21,39 @@ verify_mailer_interception() {
   grep -Fq -- '!== false' <<<"$mailer" || fail "${branch}: false-return cancellation contract missing"
 }
 
-verify_mailable_build_hook() {
+verify_mailable_metadata_handoff() {
   local branch="$1"
-  echo "Checking Mailable::build classification hook on pkp-lib:${branch}"
-  local mailable
+  echo "Checking Mailable build/object-metadata handoff contracts on pkp-lib:${branch}"
+
+  local mailable event mailer style_trait
   mailable="$(fetch pkp/pkp-lib "$branch" classes/mail/Mailable.php)"
-  grep -Fq -- "Hook::run('Mailable::build'" <<<"$mailable" || fail "${branch}: Mailable::build hook missing"
+  event="$(fetch pkp/pkp-lib "$branch" classes/observers/events/MessageSendingFromContext.php)"
+  mailer="$(fetch pkp/pkp-lib "$branch" classes/mail/Mailer.php)"
+  style_trait="$(fetch pkp/pkp-lib "$branch" classes/mail/traits/AddsStyleToSymfonyMessage.php)"
+
+  grep -Fq -- "Hook::run('Mailable::build'" <<<"$mailable" || fail "${branch}: literal Mailable::build hook missing"
+  grep -Fq -- 'withSymfonyMessage' <<<"$style_trait" || fail "${branch}: withSymfonyMessage callback integration missing"
+  grep -Fq -- 'public function __construct(Context $context, SymfonyEmail $message, array $data = [])' <<<"$event" || fail "${branch}: MessageSendingFromContext constructor shape changed"
+
+  # PKP currently constructs this event with only context + Symfony message.
+  # Therefore MailGuard must not depend on inherited Illuminate event data for
+  # classification; it uses process-local metadata keyed by the Email object.
+  grep -Fq -- 'new MessageSendingFromContext($context, $message)' <<<"$mailer" || fail "${branch}: pre-send event construction contract changed; re-review metadata handoff"
 }
 
 verify_issue_path() {
   local branch="$1"
-  echo "Checking new-issue mailable path on ojs:${branch}"
-  local job
+  echo "Checking new-issue mailable path and stable issue identity on ojs:${branch}"
+  local job issue_variable
   job="$(fetch pkp/ojs "$branch" jobs/notifications/IssuePublishedNotifyUsers.php)"
+  issue_variable="$(fetch pkp/ojs "$branch" classes/mail/variables/IssueEmailVariable.php)"
+
   grep -Fq -- 'IssuePublishedNotify' <<<"$job" || fail "${branch}: IssuePublishedNotify mailable missing"
+  grep -Fq -- 'createNotification(' <<<"$job" || fail "${branch}: native issue notification creation missing"
   grep -Fq -- 'Mail::send($mailable)' <<<"$job" || fail "${branch}: expected mailable send call missing"
   grep -Fq -- 'allowUnsubscribe' <<<"$job" || fail "${branch}: native unsubscribe integration missing"
+  grep -Fq -- "public const ISSUE_ID = 'issueId'" <<<"$issue_variable" || fail "${branch}: stable issueId variable missing"
+  grep -Fq -- 'static::ISSUE_ID => $this->issue->getId()' <<<"$issue_variable" || fail "${branch}: issueId no longer resolves from native Issue identity"
 }
 
 verify_scheduler() {
@@ -61,7 +78,7 @@ for branch in stable-3_4_0 stable-3_5_0 main; do
 done
 
 for branch in stable-3_5_0 main; do
-  verify_mailable_build_hook "$branch"
+  verify_mailable_metadata_handoff "$branch"
   verify_issue_path "$branch"
   verify_scheduler "$branch"
   verify_encryption "$branch"
