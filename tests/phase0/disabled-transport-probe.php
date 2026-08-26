@@ -11,11 +11,11 @@ $ojsRoot = dirname(__DIR__, 5);
 require $ojsRoot . '/tools/bootstrap.php';
 
 use APP\core\Application;
+use APP\facades\Repo;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use PKP\context\Context;
 use PKP\mail\Mailable;
-use PKP\facades\Repo;
 use APP\plugins\generic\mailGuard\MailGuardPlugin;
 
 function disabledProbeFail(string $message): never
