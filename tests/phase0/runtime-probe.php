@@ -18,6 +18,8 @@ require $ojsRoot . '/tools/bootstrap.php';
 use APP\core\Application;
 use APP\jobs\notifications\IssuePublishedNotifyUsers;
 use APP\notification\Notification;
+use Carbon\Carbon;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
@@ -25,9 +27,9 @@ use PKP\facades\Locale;
 use PKP\facades\Repo;
 use PKP\mail\Mailable;
 use PKP\context\Context;
-use Symfony\Component\Mime\Address;
 use APP\plugins\generic\mailGuard\MailGuardBypass;
 use APP\plugins\generic\mailGuard\MailGuardPlugin;
+use APP\plugins\generic\mailGuard\MailGuardProbeSpoolTask;
 use APP\plugins\generic\mailGuard\MailGuardSpoolRepository;
 
 function phase0Fail(string $message): never
@@ -79,6 +81,19 @@ phase0Assert(
 phase0Assert(
     DB::getSchemaBuilder()->hasTable(MailGuardPlugin::SPOOL_TABLE),
     'Phase 0 durable spool migration is installed'
+);
+
+// Resolving OJS's native Schedule in a CLI lifecycle causes PKPScheduler to
+// load enabled HasTaskScheduler plugins. Assert the MailGuard probe is present
+// in that real schedule rather than merely calling registerSchedules() by hand.
+/** @var Schedule $schedule */
+$schedule = app(Schedule::class);
+$scheduleSummaries = collect($schedule->events())
+    ->map(static fn ($event): string => $event->getSummaryForDisplay())
+    ->all();
+phase0Assert(
+    in_array(MailGuardProbeSpoolTask::class, $scheduleSummaries, true),
+    'native OJS scheduler discovers and registers the MailGuard spool task'
 );
 
 $contextId = (int) DB::table('journals')
@@ -190,7 +205,7 @@ $firstToken = $firstClaim['token'];
 
 DB::table(MailGuardPlugin::SPOOL_TABLE)
     ->where('lease_token', $firstToken)
-    ->update(['lease_expires_at' => now()->subMinute()]);
+    ->update(['lease_expires_at' => Carbon::now()->subMinute()]);
 
 $secondClaim = $spool->claimBatch(1);
 phase0Assert($secondClaim !== null && $secondClaim['count'] === 1, 'expired worker lease is reclaimable after simulated crash');
