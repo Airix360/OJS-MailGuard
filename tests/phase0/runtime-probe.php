@@ -16,6 +16,7 @@ $ojsRoot = dirname(__DIR__, 5);
 require $ojsRoot . '/tools/bootstrap.php';
 
 use APP\core\Application;
+use APP\facades\Repo;
 use APP\jobs\notifications\IssuePublishedNotifyUsers;
 use APP\notification\Notification;
 use Carbon\Carbon;
@@ -24,7 +25,6 @@ use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use PKP\facades\Locale;
-use PKP\facades\Repo;
 use PKP\mail\Mailable;
 use PKP\context\Context;
 use APP\plugins\generic\mailGuard\MailGuardBypass;
