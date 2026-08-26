@@ -21,24 +21,19 @@ verify_mailer_interception() {
   grep -Fq -- '!== false' <<<"$mailer" || fail "${branch}: false-return cancellation contract missing"
 }
 
-verify_mailable_metadata_handoff() {
+verify_mailable_data_handoff() {
   local branch="$1"
-  echo "Checking Mailable build/object-metadata handoff contracts on pkp-lib:${branch}"
+  echo "Checking Mailable build/data handoff contracts on pkp-lib:${branch}"
 
-  local mailable event mailer style_trait
+  local mailable event mailer
   mailable="$(fetch pkp/pkp-lib "$branch" classes/mail/Mailable.php)"
   event="$(fetch pkp/pkp-lib "$branch" classes/observers/events/MessageSendingFromContext.php)"
   mailer="$(fetch pkp/pkp-lib "$branch" classes/mail/Mailer.php)"
-  style_trait="$(fetch pkp/pkp-lib "$branch" classes/mail/traits/AddsStyleToSymfonyMessage.php)"
 
   grep -Fq -- "Hook::run('Mailable::build'" <<<"$mailable" || fail "${branch}: literal Mailable::build hook missing"
-  grep -Fq -- 'withSymfonyMessage' <<<"$style_trait" || fail "${branch}: withSymfonyMessage callback integration missing"
+  grep -Fq -- '$view->setData($view->getLocale());' <<<"$mailer" || fail "${branch}: PKP no longer resolves mailable data before send"
   grep -Fq -- 'public function __construct(Context $context, SymfonyEmail $message, array $data = [])' <<<"$event" || fail "${branch}: MessageSendingFromContext constructor shape changed"
-
-  # PKP currently constructs this event with only context + Symfony message.
-  # Therefore MailGuard must not depend on inherited Illuminate event data for
-  # classification; it uses process-local metadata keyed by the Email object.
-  grep -Fq -- 'new MessageSendingFromContext($context, $message)' <<<"$mailer" || fail "${branch}: pre-send event construction contract changed; re-review metadata handoff"
+  grep -Fq -- 'new MessageSendingFromContext($context, $message, $data)' <<<"$mailer" || fail "${branch}: pre-send event no longer receives the mailable data array"
 }
 
 verify_issue_path() {
@@ -78,7 +73,7 @@ for branch in stable-3_4_0 stable-3_5_0 main; do
 done
 
 for branch in stable-3_5_0 main; do
-  verify_mailable_metadata_handoff "$branch"
+  verify_mailable_data_handoff "$branch"
   verify_issue_path "$branch"
   verify_scheduler "$branch"
   verify_encryption "$branch"
