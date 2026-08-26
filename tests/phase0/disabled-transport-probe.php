@@ -12,10 +12,10 @@ require $ojsRoot . '/tools/bootstrap.php';
 
 use APP\core\Application;
 use APP\facades\Repo;
+use APP\jobs\notifications\IssuePublishedNotifyUsers;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Mail;
 use PKP\context\Context;
-use PKP\mail\Mailable;
+use PKP\facades\Locale;
 use APP\plugins\generic\mailGuard\MailGuardPlugin;
 
 function disabledProbeFail(string $message): never
@@ -24,28 +24,12 @@ function disabledProbeFail(string $message): never
     exit(1);
 }
 
-final class MailGuardDisabledProbeMailable extends Mailable
-{
-    public function __construct(Context $context, string $recipient, int $issueId)
-    {
-        parent::__construct([$context]);
-        $this->to($recipient);
-        $this->subject('MailGuard Phase 0 disabled transport probe');
-        $this->body('<p>MailGuard is disabled; this message must use native OJS transport.</p>');
-        $this->addData([
-            MailGuardPlugin::INTERNAL_TYPE_KEY => MailGuardPlugin::MAIL_TYPE_ISSUE_PUBLISHED,
-            MailGuardPlugin::INTERNAL_CONTROL_KEY => MailGuardPlugin::CONTROL_SUBSCRIPTION,
-            'issueId' => $issueId,
-        ]);
-    }
-}
-
 $pluginPath = 'plugins/generic/mailGuard';
 /** @var MailGuardPlugin $plugin */
 $plugin = require $ojsRoot . '/' . $pluginPath . '/index.php';
 
 // Disable before registration in this fresh process. Therefore the plugin's
-// cancellable MessageSendingFromContext listener is never attached.
+// build hook and cancellable MessageSendingFromContext listener are not attached.
 $plugin->setEnabled(false);
 if (!$plugin->register('generic', $pluginPath, Application::SITE_CONTEXT_ID)) {
     disabledProbeFail('disabled plugin shell did not register');
@@ -55,21 +39,29 @@ $contextId = (int) DB::table('journals')->orderBy('journal_id')->value('journal_
 $issueId = (int) DB::table('issues')->where('journal_id', $contextId)->orderBy('issue_id')->value('issue_id');
 $recipientId = (int) DB::table('users')->where('disabled', 0)->whereNotNull('email')->orderBy('user_id')->value('user_id');
 $context = Application::getContextDAO()->getById($contextId);
+$issue = Repo::issue()->get($issueId);
 $recipient = Repo::user()->get($recipientId);
 
-if (!$context instanceof Context || !$recipient || $issueId < 1) {
+if (!$context instanceof Context || !$issue || !$recipient) {
     disabledProbeFail('prepared OJS fixture could not be resolved');
 }
 
-$email = strtolower(trim((string) $recipient->getEmail()));
 $spoolBefore = DB::table(MailGuardPlugin::SPOOL_TABLE)->count();
 
-Mail::send(new MailGuardDisabledProbeMailable($context, $email, $issueId));
+// Exercise the actual controlled OJS path while MailGuard is disabled.
+$job = new IssuePublishedNotifyUsers(
+    collect([$recipientId]),
+    $contextId,
+    $issue,
+    Locale::getLocale(),
+    $recipient
+);
+$job->handle();
 
 $spoolAfter = DB::table(MailGuardPlugin::SPOOL_TABLE)->count();
 if ($spoolAfter !== $spoolBefore) {
-    disabledProbeFail('disabled plugin unexpectedly captured a message');
+    disabledProbeFail('disabled plugin unexpectedly captured a real issue notification email');
 }
 
-fwrite(STDOUT, "[PASS] disabled MailGuard does not capture controlled mail\n");
+fwrite(STDOUT, "[PASS] disabled MailGuard leaves real OJS issue mail on native transport\n");
 fwrite(STDOUT, "MAILGUARD_PHASE0_DISABLED_TRANSPORT_PASS\n");
