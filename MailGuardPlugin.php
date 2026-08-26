@@ -12,6 +12,7 @@
 
 namespace APP\plugins\generic\mailGuard;
 
+use APP\core\Application;
 use APP\mail\mailables\IssuePublishedNotify;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\Migrations\Migration;
@@ -72,6 +73,38 @@ class MailGuardPlugin extends GenericPlugin implements HasTaskScheduler
     public function isSitePlugin()
     {
         return true;
+    }
+
+    /**
+     * Site plugins are stored at Application::SITE_CONTEXT_ID (0). PKP 3.5's
+     * LazyLoadPlugin::getEnabled() compares the supplied context with null using
+     * a loose comparison, so an explicit site context ID of 0 is treated as null
+     * and causes request-context resolution. That is unsafe in CLI/scheduler
+     * lifecycles where the request router may not exist yet.
+     *
+     * MailGuard is intentionally site-wide, so resolve its enabled state directly
+     * from the canonical site context instead of depending on request state.
+     *
+     * @param null|mixed $contextId Ignored for this site-wide plugin.
+     */
+    public function getEnabled($contextId = null)
+    {
+        return (bool) $this->getSetting(Application::SITE_CONTEXT_ID, 'enabled');
+    }
+
+    /**
+     * Persist site-wide enablement without requiring an HTTP request context.
+     *
+     * @param bool $enabled
+     */
+    public function setEnabled($enabled)
+    {
+        $this->updateSetting(
+            Application::SITE_CONTEXT_ID,
+            'enabled',
+            (bool) $enabled,
+            'bool'
+        );
     }
 
     public function getDisplayName()
