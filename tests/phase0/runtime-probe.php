@@ -6,8 +6,9 @@
  * This script is executed only inside the disposable PKP GitHub Actions test
  * installation. It proves the real OJS new-issue job can be intercepted after
  * its in-app notification is created, persisted idempotently and encrypted,
- * and that lease recovery works. It also emits exactly one bypass email so the
- * surrounding shell harness can prove the native transport remains reachable.
+ * and that lease recovery works. It also runs the same real OJS producer under
+ * the scoped bypass so the surrounding shell harness can prove native transport
+ * remains reachable without recapture.
  */
 
 declare(strict_types=1);
@@ -23,9 +24,7 @@ use Carbon\Carbon;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Mail;
 use PKP\facades\Locale;
-use PKP\mail\Mailable;
 use PKP\context\Context;
 use APP\plugins\generic\mailGuard\MailGuardBypass;
 use APP\plugins\generic\mailGuard\MailGuardPlugin;
@@ -44,20 +43,6 @@ function phase0Assert(bool $condition, string $message): void
         phase0Fail($message);
     }
     fwrite(STDOUT, "[PASS] {$message}\n");
-}
-
-/**
- * Tiny context-bearing mailable used only for bypass/transport reachability.
- */
-final class MailGuardTransportProbeMailable extends Mailable
-{
-    public function __construct(Context $context, string $recipient)
-    {
-        parent::__construct([$context]);
-        $this->to($recipient);
-        $this->subject('MailGuard Phase 0 bypass transport probe');
-        $this->body('<p>MailGuard Phase 0 bypass transport probe.</p>');
-    }
 }
 
 $pluginPath = 'plugins/generic/mailGuard';
@@ -212,12 +197,18 @@ phase0Assert($secondClaim !== null && $secondClaim['count'] === 1, 'expired work
 phase0Assert($secondClaim['token'] !== $firstToken, 'recovered lease receives a new ownership token');
 phase0Assert($spool->releaseProbe($secondClaim['token']) === 1, 'recovered lease can be safely released by its owner');
 
-// Verify the scoped bypass does not recurse into MailGuard capture and leaves
-// the native OJS transport reachable. The shell harness asserts Sendria sees
-// exactly this one message and none of the two intercepted issue messages.
-$transportProbe = new MailGuardTransportProbeMailable($context, $recipientEmail);
-MailGuardBypass::run(static function () use ($transportProbe): void {
-    Mail::send($transportProbe);
+// Run the same controlled producer path under MailGuard's scoped bypass. This
+// must create the native OJS notification and one SMTP delivery while leaving
+// the existing spool identity unchanged.
+MailGuardBypass::run(static function () use ($recipientId, $contextId, $issue, $sender): void {
+    $job = new IssuePublishedNotifyUsers(
+        collect([$recipientId]),
+        $contextId,
+        $issue,
+        Locale::getLocale(),
+        $sender
+    );
+    $job->handle();
 });
 
 phase0Assert(
@@ -225,7 +216,7 @@ phase0Assert(
         ->where('context_id', $contextId)
         ->where('object_id', $issueId)
         ->count() === 1,
-    'MailGuard bypass does not recursively recapture its own/native send path'
+    'scoped bypass sends the controlled OJS mail without recursive recapture'
 );
 
 fwrite(STDOUT, "MAILGUARD_PHASE0_RUNTIME_PASS\n");
