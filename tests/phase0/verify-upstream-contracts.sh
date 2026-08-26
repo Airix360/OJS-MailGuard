@@ -16,9 +16,9 @@ verify_mailer_interception() {
   echo "Checking cancellable pre-send seam on pkp-lib:${branch}"
   local mailer
   mailer="$(fetch pkp/pkp-lib "$branch" classes/mail/Mailer.php)"
-  grep -Fq 'new MessageSendingFromContext' <<<"$mailer" || fail "${branch}: MessageSendingFromContext missing"
-  grep -Fq '->until(new MessageSendingFromContext' <<<"$mailer" || fail "${branch}: Dispatcher::until context send gate missing"
-  grep -Fq '!== false' <<<"$mailer" || fail "${branch}: false-return cancellation contract missing"
+  grep -Fq -- 'new MessageSendingFromContext' <<<"$mailer" || fail "${branch}: MessageSendingFromContext missing"
+  grep -Fq -- '->until(new MessageSendingFromContext' <<<"$mailer" || fail "${branch}: Dispatcher::until context send gate missing"
+  grep -Fq -- '!== false' <<<"$mailer" || fail "${branch}: false-return cancellation contract missing"
 }
 
 verify_mailable_build_hook() {
@@ -26,7 +26,7 @@ verify_mailable_build_hook() {
   echo "Checking Mailable::build classification hook on pkp-lib:${branch}"
   local mailable
   mailable="$(fetch pkp/pkp-lib "$branch" classes/mail/Mailable.php)"
-  grep -Fq "Hook::run('Mailable::build'" <<<"$mailable" || fail "${branch}: Mailable::build hook missing"
+  grep -Fq -- "Hook::run('Mailable::build'" <<<"$mailable" || fail "${branch}: Mailable::build hook missing"
 }
 
 verify_issue_path() {
@@ -34,9 +34,9 @@ verify_issue_path() {
   echo "Checking new-issue mailable path on ojs:${branch}"
   local job
   job="$(fetch pkp/ojs "$branch" jobs/notifications/IssuePublishedNotifyUsers.php)"
-  grep -Fq 'IssuePublishedNotify' <<<"$job" || fail "${branch}: IssuePublishedNotify mailable missing"
-  grep -Fq 'Mail::send($mailable)' <<<"$job" || fail "${branch}: expected mailable send call missing"
-  grep -Fq 'allowUnsubscribe' <<<"$job" || fail "${branch}: native unsubscribe integration missing"
+  grep -Fq -- 'IssuePublishedNotify' <<<"$job" || fail "${branch}: IssuePublishedNotify mailable missing"
+  grep -Fq -- 'Mail::send($mailable)' <<<"$job" || fail "${branch}: expected mailable send call missing"
+  grep -Fq -- 'allowUnsubscribe' <<<"$job" || fail "${branch}: native unsubscribe integration missing"
 }
 
 verify_scheduler() {
@@ -44,8 +44,8 @@ verify_scheduler() {
   echo "Checking plugin scheduler contract on pkp-lib:${branch}"
   local scheduler
   scheduler="$(fetch pkp/pkp-lib "$branch" classes/scheduledTask/PKPScheduler.php)"
-  grep -Fq 'HasTaskScheduler' <<<"$scheduler" || fail "${branch}: HasTaskScheduler integration missing"
-  grep -Fq 'registerSchedules($this)' <<<"$scheduler" || fail "${branch}: plugin schedule registration missing"
+  grep -Fq -- 'HasTaskScheduler' <<<"$scheduler" || fail "${branch}: HasTaskScheduler integration missing"
+  grep -Fq -- 'registerSchedules($this)' <<<"$scheduler" || fail "${branch}: plugin schedule registration missing"
 }
 
 verify_encryption() {
@@ -53,7 +53,7 @@ verify_encryption() {
   echo "Checking PKP encryption provider on pkp-lib:${branch}"
   local container
   container="$(fetch pkp/pkp-lib "$branch" classes/core/PKPContainer.php)"
-  grep -Fq 'PKPEncryptionServiceProvider' <<<"$container" || fail "${branch}: PKP encryption provider is not registered"
+  grep -Fq -- 'PKPEncryptionServiceProvider' <<<"$container" || fail "${branch}: PKP encryption provider is not registered"
 }
 
 for branch in stable-3_4_0 stable-3_5_0 main; do
