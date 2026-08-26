@@ -1,7 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PLUGIN_DIR="plugins/generic/OJS-MailGuard"
+# pkp-github-actions installs plugin repositories using the GitHub repository
+# name. OJS plugin product names cannot contain a hyphen, and this plugin's
+# declared product is `mailGuard`, so normalize the disposable CI installation
+# path before booting OJS/PKP. This does not rename the GitHub repository.
+PKP_ACTION_PLUGIN_DIR="plugins/generic/OJS-MailGuard"
+PLUGIN_DIR="plugins/generic/mailGuard"
+
+if [ -d "$PKP_ACTION_PLUGIN_DIR" ] && [ ! -e "$PLUGIN_DIR" ]; then
+  mv "$PKP_ACTION_PLUGIN_DIR" "$PLUGIN_DIR"
+fi
+
+if [ ! -f "$PLUGIN_DIR/version.xml" ]; then
+  echo "::error::[MailGuard Phase 0 runtime] Expected plugin descriptor at ${PLUGIN_DIR}/version.xml" >&2
+  exit 1
+fi
+
 SENDRIA_DB="${RUNNER_TEMP}/mails.sqlite"
 
 fail() {
