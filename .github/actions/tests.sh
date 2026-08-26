@@ -38,12 +38,13 @@ before_count="$(sendria_count)"
 echo "Sendria messages before MailGuard probes: ${before_count}"
 
 php "${PLUGIN_DIR}/tests/phase0/runtime-probe.php"
+php "${PLUGIN_DIR}/tests/phase0/fail-open-probe.php"
 php "${PLUGIN_DIR}/tests/phase0/disabled-transport-probe.php"
 
 # Sendria persists received SMTP messages asynchronously. Poll the local DB
-# rather than sleeping a fixed amount, then require exactly two native sends:
-# one scoped bypass and one send after the plugin is disabled.
-expected_count=$((before_count + 2))
+# rather than sleeping a fixed amount, then require exactly three native sends:
+# one scoped bypass, one fail-open delivery, and one send after plugin disable.
+expected_count=$((before_count + 3))
 after_count="$(sendria_count)"
 for _ in $(seq 1 20); do
   if [ "$after_count" -ge "$expected_count" ]; then
@@ -56,10 +57,11 @@ done
 echo "Sendria messages after MailGuard probes: ${after_count}"
 
 if [ "$after_count" -ne "$expected_count" ]; then
-  fail "Expected exactly 2 native SMTP deliveries (bypass + disabled), got delta $((after_count - before_count)). Intercepted issue mail may have escaped or native transport may be broken."
+  fail "Expected exactly 3 native SMTP deliveries (bypass + fail-open + disabled), got delta $((after_count - before_count)). Intercepted issue mail may have escaped or a safe native path may be broken."
 fi
 
 echo "[PASS] Two intercepted new-issue attempts produced zero SMTP deliveries"
 echo "[PASS] Scoped bypass produced one native SMTP delivery"
+echo "[PASS] Capture failure failed open to one native SMTP delivery"
 echo "[PASS] Disabled MailGuard produced one native SMTP delivery"
 echo "MAILGUARD_PHASE0_OJS_RUNTIME_PASS"
