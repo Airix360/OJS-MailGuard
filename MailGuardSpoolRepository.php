@@ -43,7 +43,9 @@ final class MailGuardSpoolRepository
 
         $candidateIds = DB::table(MailGuardPlugin::SPOOL_TABLE)
             ->select('capture_id')
-            ->where(fn (Builder $q) => $this->claimable($q, $now))
+            ->where(function (Builder $query) use ($now): void {
+                $this->claimable($query, $now);
+            })
             ->orderBy('capture_id')
             ->limit($limit)
             ->pluck('capture_id')
@@ -57,7 +59,9 @@ final class MailGuardSpoolRepository
         // whose claimability predicate still matches can lease each row.
         DB::table(MailGuardPlugin::SPOOL_TABLE)
             ->whereIn('capture_id', $candidateIds)
-            ->where(fn (Builder $q) => $this->claimable($q, $now))
+            ->where(function (Builder $query) use ($now): void {
+                $this->claimable($query, $now);
+            })
             ->update([
                 'state' => 'leased',
                 'lease_token' => $token,
