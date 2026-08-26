@@ -43,7 +43,7 @@ final class MailGuardFailOpenProbeMailable extends Mailable
     }
 }
 
-$pluginPath = 'plugins/generic/OJS-MailGuard';
+$pluginPath = 'plugins/generic/mailGuard';
 /** @var MailGuardPlugin $plugin */
 $plugin = require $ojsRoot . '/' . $pluginPath . '/index.php';
 
