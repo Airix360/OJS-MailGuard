@@ -24,7 +24,6 @@ use PKP\plugins\GenericPlugin;
 use PKP\plugins\Hook;
 use PKP\plugins\interfaces\HasTaskScheduler;
 use PKP\scheduledTask\PKPScheduler;
-use Symfony\Component\Mime\Email;
 use Throwable;
 
 class MailGuardPlugin extends GenericPlugin implements HasTaskScheduler
@@ -47,7 +46,6 @@ class MailGuardPlugin extends GenericPlugin implements HasTaskScheduler
         }
 
         require_once __DIR__ . '/MailGuardBypass.php';
-        require_once __DIR__ . '/MailGuardMessageMetadata.php';
         require_once __DIR__ . '/MailGuardCaptureService.php';
         require_once __DIR__ . '/MailGuardSpoolRepository.php';
         require_once __DIR__ . '/MailGuardProbeSpoolTask.php';
@@ -89,38 +87,20 @@ class MailGuardPlugin extends GenericPlugin implements HasTaskScheduler
     /**
      * Classify only the motivating OJS bulk mailable during Phase 0.
      *
-     * PKP's pre-send event is constructed without the mailable's view data, so
-     * classification cannot be recovered from MessageSendingFromContext::$data.
-     * Instead, this build hook resolves the native issueId, then attaches a
-     * withSymfonyMessage() callback. Laravel invokes that callback after the
-     * final Symfony Email exists and before the pre-send event. Metadata is
-     * stored process-locally against that exact Email object; no internal
-     * MailGuard headers are written into a message that might fail open.
+     * PKP Mailer::send() resolves native mailable variables before Laravel's
+     * build step, so IssueEmailVariable::ISSUE_ID is already in viewData when
+     * this hook runs. We add only internal classification markers. Laravel then
+     * passes the resulting data array to PKP Mailer::shouldSendMessage(), which
+     * forwards it into MessageSendingFromContext.
      */
     public function decorateMailable(string $hookName, Mailable $mailable): bool
     {
-        if (!$mailable instanceof IssuePublishedNotify) {
-            return Hook::CONTINUE;
+        if ($mailable instanceof IssuePublishedNotify) {
+            $mailable->addData([
+                self::INTERNAL_TYPE_KEY => self::MAIL_TYPE_ISSUE_PUBLISHED,
+                self::INTERNAL_CONTROL_KEY => self::CONTROL_SUBSCRIPTION,
+            ]);
         }
-
-        $data = $mailable->getData();
-        $issueId = (int) ($data['issueId'] ?? 0);
-        if ($issueId < 1) {
-            error_log('[MailGuard Phase 0] IssuePublishedNotify build hook did not expose a valid issueId; leaving native delivery enabled.');
-            return Hook::CONTINUE;
-        }
-
-        $metadata = [
-            self::INTERNAL_TYPE_KEY => self::MAIL_TYPE_ISSUE_PUBLISHED,
-            self::INTERNAL_CONTROL_KEY => self::CONTROL_SUBSCRIPTION,
-            'issueId' => $issueId,
-        ];
-
-        $mailable->withSymfonyMessage(
-            static function (Email $message) use ($metadata): void {
-                MailGuardMessageMetadata::remember($message, $metadata);
-            }
-        );
 
         return Hook::CONTINUE;
     }
@@ -143,17 +123,15 @@ class MailGuardPlugin extends GenericPlugin implements HasTaskScheduler
     public function onMessageSendingFromContext(MessageSendingFromContext $event): ?bool
     {
         if (MailGuardBypass::active()) {
-            MailGuardMessageMetadata::forget($event->message);
             return null;
         }
 
         if (!Config::getVar('mailguard', 'phase0_capture', false)) {
-            MailGuardMessageMetadata::forget($event->message);
             return null;
         }
 
-        $metadata = MailGuardMessageMetadata::take($event->message);
-        if (($metadata[self::INTERNAL_TYPE_KEY] ?? null) !== self::MAIL_TYPE_ISSUE_PUBLISHED) {
+        $mailType = $event->data[self::INTERNAL_TYPE_KEY] ?? null;
+        if ($mailType !== self::MAIL_TYPE_ISSUE_PUBLISHED) {
             return null;
         }
 
@@ -161,7 +139,7 @@ class MailGuardPlugin extends GenericPlugin implements HasTaskScheduler
             $captured = (new MailGuardCaptureService())->capture(
                 $event->context,
                 $event->message,
-                $metadata
+                $event->data
             );
 
             if (!$captured) {
